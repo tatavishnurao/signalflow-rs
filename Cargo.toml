@@ -1,0 +1,15 @@
+[package]
+name = "realtime-audio-accelerator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+
+[lib]
+name = "realtime_audio_accelerator"
+path = "src/lib.rs"
+
+[[bin]]
+name = "realtime-audio-accelerator"
+path = "src/main.rs"
