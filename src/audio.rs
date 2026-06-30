@@ -25,3 +25,25 @@ pub fn generate_dummy_audio(config: &AppConfig, duration_ms: u32) -> AudioChunk 
         channels: config.channels,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::generate_dummy_audio;
+    use crate::config::AppConfig;
+
+    #[test]
+    fn dummy_audio_has_expected_sample_count() {
+        let chunk = generate_dummy_audio(&AppConfig::default(), 100);
+
+        assert_eq!(chunk.samples.len(), 1_600);
+    }
+
+    #[test]
+    fn dummy_audio_preserves_config_metadata() {
+        let config = AppConfig::default();
+        let chunk = generate_dummy_audio(&config, 100);
+
+        assert_eq!(chunk.sample_rate_hz, config.sample_rate_hz);
+        assert_eq!(chunk.channels, config.channels);
+    }
+}
