@@ -25,3 +25,23 @@ pub fn run_dummy_pipeline(config: &AppConfig) -> Result<PipelineReport> {
         rms_energy: rms_energy(&chunk.samples),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::run_dummy_pipeline;
+    use crate::config::AppConfig;
+
+    #[test]
+    fn dummy_pipeline_succeeds() {
+        assert!(run_dummy_pipeline(&AppConfig::default()).is_ok());
+    }
+
+    #[test]
+    fn dummy_pipeline_report_has_expected_values() {
+        let report = run_dummy_pipeline(&AppConfig::default()).unwrap();
+
+        assert_eq!(report.num_samples, 1_600);
+        assert_eq!(report.frame_size_samples, 400);
+        assert_eq!(report.hop_size_samples, 160);
+    }
+}
