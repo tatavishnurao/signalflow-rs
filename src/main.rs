@@ -1,4 +1,4 @@
-use realtime_audio_accelerator::{config::AppConfig, pipeline::run_dummy_pipeline};
+use signalflow_rs::{config::AppConfig, pipeline::run_dummy_pipeline};
 
 fn main() -> anyhow::Result<()> {
     let config = AppConfig::default();
