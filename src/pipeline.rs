@@ -5,6 +5,7 @@ use crate::{
     config::AppConfig,
     dsp::{normalize_samples, rms_energy},
     framing::{frame_signal, FrameConfig},
+    spectrum::magnitude_spectrum,
     window::{window_frame, WindowFunction},
 };
 
@@ -15,6 +16,8 @@ pub struct PipelineReport {
     pub hop_size_samples: usize,
     pub num_frames: usize,
     pub first_windowed_frame_rms: f32,
+    pub first_spectrum_bins: usize,
+    pub first_spectrum_peak: f32,
     pub rms_energy: f32,
 }
 
@@ -30,6 +33,15 @@ pub fn run_dummy_pipeline(config: &AppConfig) -> Result<PipelineReport> {
             rms_energy(&windowed)
         })
         .unwrap_or(0.0);
+    let (first_spectrum_bins, first_spectrum_peak) = frames
+        .first()
+        .map(|frame| {
+            let windowed = window_frame(frame, WindowFunction::Hann);
+            let spectrum = magnitude_spectrum(&windowed);
+            let peak = spectrum.iter().copied().fold(0.0, f32::max);
+            (spectrum.len(), peak)
+        })
+        .unwrap_or((0, 0.0));
 
     Ok(PipelineReport {
         num_samples: chunk.samples.len(),
@@ -37,6 +49,8 @@ pub fn run_dummy_pipeline(config: &AppConfig) -> Result<PipelineReport> {
         hop_size_samples: frame_config.hop_size_samples,
         num_frames: frames.len(),
         first_windowed_frame_rms,
+        first_spectrum_bins,
+        first_spectrum_peak,
         rms_energy: rms_energy(&chunk.samples),
     })
 }
@@ -60,5 +74,7 @@ mod tests {
         assert_eq!(report.hop_size_samples, 160);
         assert_eq!(report.num_frames, 8);
         assert!(report.first_windowed_frame_rms >= 0.0);
+        assert_eq!(report.first_spectrum_bins, 201);
+        assert!(report.first_spectrum_peak >= 0.0);
     }
 }
