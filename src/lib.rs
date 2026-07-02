@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod config;
 pub mod dsp;
+pub mod features;
 pub mod framing;
 pub mod mel;
 pub mod metrics;
