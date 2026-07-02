@@ -5,7 +5,9 @@ use crate::{
     config::AppConfig,
     dsp::{normalize_samples, rms_energy},
     framing::{frame_signal, FrameConfig},
+    mel::{apply_mel_filterbank, build_mel_filterbank, MelConfig},
     spectrum::magnitude_spectrum,
+    spectrum::power_spectrum,
     window::{window_frame, WindowFunction},
 };
 
@@ -18,6 +20,8 @@ pub struct PipelineReport {
     pub first_windowed_frame_rms: f32,
     pub first_spectrum_bins: usize,
     pub first_spectrum_peak: f32,
+    pub mel_bins: usize,
+    pub first_mel_energy_peak: f32,
     pub rms_energy: f32,
 }
 
@@ -26,22 +30,37 @@ pub fn run_dummy_pipeline(config: &AppConfig) -> Result<PipelineReport> {
     normalize_samples(&mut chunk.samples);
     let frame_config = FrameConfig::new(config.frame_size_samples(), config.hop_size_samples());
     let frames = frame_signal(&chunk.samples, frame_config);
-    let first_windowed_frame_rms = frames
+    let (
+        first_windowed_frame_rms,
+        first_spectrum_bins,
+        first_spectrum_peak,
+        mel_bins,
+        first_mel_energy_peak,
+    ) = frames
         .first()
         .map(|frame| {
             let windowed = window_frame(frame, WindowFunction::Hann);
-            rms_energy(&windowed)
-        })
-        .unwrap_or(0.0);
-    let (first_spectrum_bins, first_spectrum_peak) = frames
-        .first()
-        .map(|frame| {
-            let windowed = window_frame(frame, WindowFunction::Hann);
+            let first_windowed_frame_rms = rms_energy(&windowed);
             let spectrum = magnitude_spectrum(&windowed);
-            let peak = spectrum.iter().copied().fold(0.0, f32::max);
-            (spectrum.len(), peak)
+            let first_spectrum_bins = spectrum.len();
+            let first_spectrum_peak = spectrum.iter().copied().fold(0.0, f32::max);
+            let power = power_spectrum(&windowed);
+            let filterbank = build_mel_filterbank(MelConfig::speech_default(
+                config.sample_rate_hz,
+                frame_config.frame_size_samples,
+            ));
+            let mel_energies = apply_mel_filterbank(&power, &filterbank);
+            let first_mel_energy_peak = mel_energies.iter().copied().fold(0.0, f32::max);
+
+            (
+                first_windowed_frame_rms,
+                first_spectrum_bins,
+                first_spectrum_peak,
+                filterbank.len(),
+                first_mel_energy_peak,
+            )
         })
-        .unwrap_or((0, 0.0));
+        .unwrap_or((0.0, 0, 0.0, 0, 0.0));
 
     Ok(PipelineReport {
         num_samples: chunk.samples.len(),
@@ -51,6 +70,8 @@ pub fn run_dummy_pipeline(config: &AppConfig) -> Result<PipelineReport> {
         first_windowed_frame_rms,
         first_spectrum_bins,
         first_spectrum_peak,
+        mel_bins,
+        first_mel_energy_peak,
         rms_energy: rms_energy(&chunk.samples),
     })
 }
@@ -76,5 +97,7 @@ mod tests {
         assert!(report.first_windowed_frame_rms >= 0.0);
         assert_eq!(report.first_spectrum_bins, 201);
         assert!(report.first_spectrum_peak >= 0.0);
+        assert_eq!(report.mel_bins, 40);
+        assert!(report.first_mel_energy_peak >= 0.0);
     }
 }
