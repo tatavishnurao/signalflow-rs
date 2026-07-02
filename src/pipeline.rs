@@ -4,7 +4,7 @@ use crate::{
     audio::generate_dummy_audio,
     config::AppConfig,
     dsp::{normalize_samples, rms_energy},
-    features::{log_mel_features, LogMelConfig},
+    extractor::extract_log_mel_from_samples,
     framing::{frame_signal, FrameConfig},
     mel::{apply_mel_filterbank, build_mel_filterbank, MelConfig},
     spectrum::magnitude_spectrum,
@@ -34,15 +34,18 @@ pub fn run_dummy_pipeline(config: &AppConfig) -> Result<PipelineReport> {
     normalize_samples(&mut chunk.samples);
     let frame_config = FrameConfig::new(config.frame_size_samples(), config.hop_size_samples());
     let frames = frame_signal(&chunk.samples, frame_config);
+    let feature_matrix = extract_log_mel_from_samples(&chunk.samples, config);
+    let (log_mel_frames, log_mel_bins, first_log_mel_value) = feature_matrix
+        .values
+        .first()
+        .map(|row| (feature_matrix.num_frames, feature_matrix.num_bins, row[0]))
+        .unwrap_or((0, 0, 0.0));
     let (
         first_windowed_frame_rms,
         first_spectrum_bins,
         first_spectrum_peak,
         mel_bins,
         first_mel_energy_peak,
-        log_mel_frames,
-        log_mel_bins,
-        first_log_mel_value,
     ) = frames
         .first()
         .map(|frame| {
@@ -58,17 +61,6 @@ pub fn run_dummy_pipeline(config: &AppConfig) -> Result<PipelineReport> {
             ));
             let mel_energies = apply_mel_filterbank(&power, &filterbank);
             let first_mel_energy_peak = mel_energies.iter().copied().fold(0.0, f32::max);
-            let log_mel = log_mel_features(
-                &frames,
-                LogMelConfig::speech_default(
-                    config.sample_rate_hz,
-                    frame_config.frame_size_samples,
-                ),
-            );
-            let (log_mel_frames, log_mel_bins, first_log_mel_value) = log_mel
-                .first()
-                .map(|row| (log_mel.len(), row.len(), row[0]))
-                .unwrap_or((0, 0, 0.0));
 
             (
                 first_windowed_frame_rms,
@@ -76,12 +68,9 @@ pub fn run_dummy_pipeline(config: &AppConfig) -> Result<PipelineReport> {
                 first_spectrum_peak,
                 filterbank.len(),
                 first_mel_energy_peak,
-                log_mel_frames,
-                log_mel_bins,
-                first_log_mel_value,
             )
         })
-        .unwrap_or((0.0, 0, 0.0, 0, 0.0, 0, 0, 0.0));
+        .unwrap_or((0.0, 0, 0.0, 0, 0.0));
 
     Ok(PipelineReport {
         num_samples: chunk.samples.len(),
