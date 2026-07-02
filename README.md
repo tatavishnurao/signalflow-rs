@@ -10,3 +10,5 @@ Real-Time Audio DSP Accelerator in Rust
 - Mel filterbank
 - log-Mel feature extraction
 - reusable sample-to-feature API
+
+The repository is still scaffold-first and will expand toward streaming inference support next.
