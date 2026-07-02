@@ -78,10 +78,6 @@ pub fn log_mel_features(frames: &[Vec<f32>], config: LogMelConfig) -> Vec<Vec<f3
 mod tests {
     use super::{log_compress, log_mel_features, log_mel_frame, LogMelConfig};
 
-    fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
-        (a - b).abs() <= eps
-    }
-
     #[test]
     fn log_compress_empty_input() {
         assert!(log_compress(&[], 1e-6).is_empty());
