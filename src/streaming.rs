@@ -19,8 +19,11 @@ pub struct StreamingExtractor {
     hop_size_samples: usize,
     log_mel_config: LogMelConfig,
     pending: Vec<f32>,
+    read_offset: usize,
     total_input_samples: usize,
     total_emitted_frames: usize,
+    total_consumed_samples: usize,
+    max_pending_samples: usize,
 }
 
 impl StreamingExtractor {
@@ -36,8 +39,11 @@ impl StreamingExtractor {
             hop_size_samples,
             log_mel_config,
             pending: Vec::new(),
+            read_offset: 0,
             total_input_samples: 0,
             total_emitted_frames: 0,
+            total_consumed_samples: 0,
+            max_pending_samples: 0,
         }
     }
 
@@ -45,6 +51,11 @@ impl StreamingExtractor {
         let _ = self.config.sample_rate_hz;
         self.pending.extend_from_slice(samples);
         self.total_input_samples += samples.len();
+
+        let mut logical_pending = self.pending.len().saturating_sub(self.read_offset);
+        if logical_pending > self.max_pending_samples {
+            self.max_pending_samples = logical_pending;
+        }
 
         let mut features = Vec::new();
         let mut consumed_samples = 0;
@@ -59,14 +70,18 @@ impl StreamingExtractor {
             };
         }
 
-        while self.pending.len() >= self.frame_size_samples {
-            let frame = self.pending[..self.frame_size_samples].to_vec();
-            let row = log_mel_frame(&frame, self.log_mel_config);
+        while self.pending.len().saturating_sub(self.read_offset) >= self.frame_size_samples {
+            let frame = &self.pending[self.read_offset..self.read_offset + self.frame_size_samples];
+            let row = log_mel_frame(frame, self.log_mel_config);
             features.push(row);
-            self.pending.drain(0..self.hop_size_samples);
+            self.read_offset += self.hop_size_samples;
+            self.total_consumed_samples += self.hop_size_samples;
             consumed_samples += self.hop_size_samples;
             self.total_emitted_frames += 1;
         }
+
+        self.compact_if_needed();
+        logical_pending = self.pending.len().saturating_sub(self.read_offset);
 
         let num_frames = features.len();
         let num_bins = features.first().map(|row| row.len()).unwrap_or(0);
@@ -76,12 +91,12 @@ impl StreamingExtractor {
             num_frames,
             num_bins,
             consumed_samples,
-            pending_samples: self.pending.len(),
+            pending_samples: logical_pending,
         }
     }
 
     pub fn pending_samples(&self) -> usize {
-        self.pending.len()
+        self.pending.len().saturating_sub(self.read_offset)
     }
 
     pub fn total_input_samples(&self) -> usize {
@@ -90,6 +105,27 @@ impl StreamingExtractor {
 
     pub fn total_emitted_frames(&self) -> usize {
         self.total_emitted_frames
+    }
+
+    pub fn total_consumed_samples(&self) -> usize {
+        self.total_consumed_samples
+    }
+
+    pub fn max_pending_samples(&self) -> usize {
+        self.max_pending_samples
+    }
+
+    fn compact_if_needed(&mut self) {
+        if self.read_offset == 0 {
+            return;
+        }
+
+        if self.read_offset >= self.hop_size_samples.saturating_mul(4)
+            || self.read_offset >= self.pending.len() / 2
+        {
+            self.pending.drain(0..self.read_offset);
+            self.read_offset = 0;
+        }
     }
 }
 
@@ -149,6 +185,7 @@ mod tests {
         assert_eq!(output.num_bins, 40);
         assert_eq!(output.pending_samples, 320);
         assert_eq!(extractor.total_emitted_frames(), 8);
+        assert_eq!(extractor.total_consumed_samples(), 1_280);
     }
 
     #[test]
@@ -171,6 +208,7 @@ mod tests {
         assert_eq!(total_frames, 8);
         assert_eq!(extractor.total_emitted_frames(), 8);
         assert_eq!(last_output.pending_samples, 320);
+        assert_eq!(extractor.total_consumed_samples(), 1_280);
     }
 
     #[test]
@@ -211,6 +249,14 @@ mod tests {
     }
 
     #[test]
+    fn streaming_tracks_total_consumed_samples() {
+        let mut extractor = StreamingExtractor::new(AppConfig::default());
+        extractor.push_samples(&vec![1.0; 1_600]);
+
+        assert_eq!(extractor.total_consumed_samples(), 1_280);
+    }
+
+    #[test]
     fn streaming_preserves_overlap_across_pushes() {
         let samples: Vec<f32> = (0..1_600).map(|i| i as f32).collect();
         let reference = extract_log_mel_from_samples(&samples, &AppConfig::default());
@@ -226,6 +272,92 @@ mod tests {
         assert_eq!(streamed, reference.values);
         assert_eq!(extractor.total_emitted_frames(), reference.num_frames);
         assert_eq!(extractor.pending_samples(), 320);
+        assert_eq!(extractor.total_consumed_samples(), 1_280);
+    }
+
+    #[test]
+    fn streaming_pending_samples_are_logical_after_processing() {
+        let mut extractor = StreamingExtractor::new(AppConfig::default());
+        extractor.push_samples(&vec![1.0; 1_600]);
+
+        assert_eq!(extractor.pending_samples(), 320);
+    }
+
+    #[test]
+    fn streaming_compaction_preserves_future_frames() {
+        let samples: Vec<f32> = (0..1_600).map(|i| i as f32).collect();
+        let reference = extract_log_mel_from_samples(&samples, &AppConfig::default());
+        let mut extractor = StreamingExtractor::new(AppConfig::default());
+
+        let mut streamed = Vec::new();
+        for chunk in samples.chunks(160) {
+            let output = extractor.push_samples(chunk);
+            streamed.extend(output.features);
+        }
+
+        assert_eq!(streamed, reference.values);
+        assert_eq!(extractor.total_emitted_frames(), 8);
+    }
+
+    #[test]
+    fn streaming_chunked_output_matches_single_push_frame_count() {
+        let mut single = StreamingExtractor::new(AppConfig::default());
+        let mut chunked = StreamingExtractor::new(AppConfig::default());
+        let samples: Vec<f32> = (0..1_600).map(|i| i as f32).collect();
+
+        let single_output = single.push_samples(&samples);
+        let mut chunked_frames = 0;
+        for chunk in samples.chunks(160) {
+            chunked_frames += chunked.push_samples(chunk).num_frames;
+        }
+
+        assert_eq!(single_output.num_frames, chunked_frames);
+        assert_eq!(
+            single.total_emitted_frames(),
+            chunked.total_emitted_frames()
+        );
+    }
+
+    #[test]
+    fn streaming_chunked_output_matches_single_push_feature_shape() {
+        let samples: Vec<f32> = (0..1_600).map(|i| i as f32).collect();
+        let mut single = StreamingExtractor::new(AppConfig::default());
+        let mut chunked = StreamingExtractor::new(AppConfig::default());
+
+        let single_output = single.push_samples(&samples);
+        let mut chunked_features = Vec::new();
+        for chunk in samples.chunks(160) {
+            chunked_features.extend(chunked.push_samples(chunk).features);
+        }
+
+        assert_eq!(single_output.features.len(), chunked_features.len());
+        assert!(chunked_features.iter().all(|row| row.len() == 40));
+    }
+
+    #[test]
+    fn streaming_handles_many_small_pushes_without_losing_frames() {
+        let samples: Vec<f32> = (0..1_600).map(|i| i as f32).collect();
+        let mut extractor = StreamingExtractor::new(AppConfig::default());
+        let mut total_frames = 0;
+
+        for chunk in samples.chunks(32) {
+            total_frames += extractor.push_samples(chunk).num_frames;
+        }
+
+        assert_eq!(total_frames, 8);
+        assert_eq!(extractor.total_emitted_frames(), 8);
+        assert_eq!(extractor.pending_samples(), 320);
+    }
+
+    #[test]
+    fn streaming_max_pending_samples_is_tracked() {
+        let mut extractor = StreamingExtractor::new(AppConfig::default());
+
+        extractor.push_samples(&vec![1.0; 100]);
+        extractor.push_samples(&vec![1.0; 300]);
+        extractor.push_samples(&vec![1.0; 1_200]);
+
+        assert!(extractor.max_pending_samples() >= 1_200);
     }
 
     #[test]
