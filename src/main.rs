@@ -1,24 +1,20 @@
-use signalflow_rs::{config::AppConfig, pipeline::run_dummy_pipeline};
+use signalflow_rs::{
+    audio::generate_dummy_audio, config::AppConfig, extractor::extract_log_mel_timed,
+};
 
 fn main() -> anyhow::Result<()> {
     let config = AppConfig::default();
-    let report = run_dummy_pipeline(&config)?;
+    let chunk = generate_dummy_audio(&config, 100);
+    let timed = extract_log_mel_timed(&chunk.samples, &config);
 
     println!(
-        "dummy pipeline: samples={}, frame={} hop={} frames={} first_windowed_frame_rms={} spectrum_bins={} spectrum_peak={:.6} mel_bins={} mel_peak={:.6} log_mel_frames={} log_mel_bins={} first_log_mel={:.6} rms={:.6}",
-        report.num_samples,
-        report.frame_size_samples,
-        report.hop_size_samples,
-        report.num_frames,
-        report.first_windowed_frame_rms,
-        report.first_spectrum_bins,
-        report.first_spectrum_peak,
-        report.mel_bins,
-        report.first_mel_energy_peak,
-        report.log_mel_frames,
-        report.log_mel_bins,
-        report.first_log_mel_value,
-        report.rms_energy
+        "extractor demo: input_samples={}, frames={}, bins={}, elapsed_ms={:.3}, samples_per_second={:.2}, frames_per_second={:.2}",
+        timed.metrics.input_samples,
+        timed.features.num_frames,
+        timed.features.num_bins,
+        timed.metrics.elapsed_ms,
+        timed.metrics.samples_per_second,
+        timed.metrics.frames_per_second
     );
 
     Ok(())
