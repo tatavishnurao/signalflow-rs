@@ -8,4 +8,5 @@ pub mod mel;
 pub mod metrics;
 pub mod pipeline;
 pub mod spectrum;
+pub mod streaming;
 pub mod window;
