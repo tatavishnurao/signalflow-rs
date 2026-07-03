@@ -12,10 +12,14 @@ Real-Time Audio DSP Accelerator in Rust
 - single-buffer extraction
 - batch extraction
 - extraction timing metrics
+- streaming / buffered extraction for chunked input
+
+This streaming layer is stateful chunked extraction for real-time pipelines; it is not microphone capture yet.
 
 ## Pipeline
 
 raw samples -> overlapping frames -> Hann windowing -> FFT power spectrum -> Mel filterbank -> log-Mel features
+raw samples -> streaming buffer -> overlapping frames -> Hann windowing -> FFT power spectrum -> Mel filterbank -> log-Mel features
 
 ## Demo
 
