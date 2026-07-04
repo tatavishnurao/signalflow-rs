@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppConfig {
     pub sample_rate_hz: u32,
     pub channels: u16,
