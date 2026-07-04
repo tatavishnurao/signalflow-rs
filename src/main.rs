@@ -25,11 +25,13 @@ fn main() -> anyhow::Result<()> {
     }
 
     println!(
-        "streaming demo: frames={}, pending={}, consumed={}, max_pending={}",
+        "streaming demo: frames={}, pending={}, consumed={}, dropped_samples={}, dropped_frames={}, peak_pending={}",
         total_streaming_frames,
         streaming.pending_samples(),
         streaming.total_consumed_samples(),
-        streaming.max_pending_samples()
+        streaming.total_dropped_samples(),
+        streaming.total_dropped_frames(),
+        streaming.peak_pending_samples()
     );
 
     Ok(())
