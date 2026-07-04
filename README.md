@@ -14,6 +14,7 @@ Real-Time Audio DSP Accelerator in Rust
 - extraction timing metrics
 - streaming / buffered extraction for chunked input
 - streaming extractor uses cursor-based buffering with periodic compaction
+- bounded streaming mode with backpressure/drop metrics
 
 This streaming layer is stateful chunked extraction for real-time pipelines; it is not microphone capture yet.
 
