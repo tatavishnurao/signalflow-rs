@@ -7,6 +7,7 @@ pub mod framing;
 pub mod mel;
 pub mod metrics;
 pub mod pipeline;
+pub mod preprocess;
 pub mod spectrum;
 pub mod streaming;
 pub mod window;
