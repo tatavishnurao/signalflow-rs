@@ -94,6 +94,9 @@ pub fn preprocess_audio(
 #[cfg(test)]
 mod tests {
     use super::{interleaved_to_mono, preprocess_audio, resample_linear, PreprocessConfig};
+    use crate::{
+        config::AppConfig, extractor::extract_log_mel_from_samples, streaming::StreamingExtractor,
+    };
 
     #[test]
     fn preprocess_config_default_is_16khz_mono() {
@@ -184,5 +187,42 @@ mod tests {
 
         assert_eq!(output.sample_rate_hz, 16_000);
         assert_eq!(output.channels, 1);
+    }
+
+    #[test]
+    fn preprocess_then_extract_has_expected_shape() {
+        let output = preprocess_audio(&[0.25; 1_600], 16_000, 1, PreprocessConfig::default());
+        let features = extract_log_mel_from_samples(&output.samples, &AppConfig::default());
+
+        assert_eq!(features.num_frames, 8);
+        assert_eq!(features.num_bins, 40);
+    }
+
+    #[test]
+    fn preprocess_then_stream_in_hop_chunks_emits_expected_frames() {
+        let output = preprocess_audio(&[0.25; 1_600], 16_000, 1, PreprocessConfig::default());
+        let mut extractor = StreamingExtractor::new(AppConfig::default());
+
+        for chunk in output.samples.chunks(160) {
+            extractor.push_samples(chunk);
+        }
+
+        assert_eq!(extractor.total_emitted_frames(), 8);
+    }
+
+    #[test]
+    fn stereo_48khz_preprocesses_and_extracts() {
+        let samples: Vec<f32> = (0..48_000)
+            .flat_map(|index| {
+                let sample = (index as f32 * 0.01).sin();
+                [sample, sample]
+            })
+            .collect();
+        let output = preprocess_audio(&samples, 48_000, 2, PreprocessConfig::default());
+        let features = extract_log_mel_from_samples(&output.samples, &AppConfig::default());
+
+        assert_eq!(output.samples.len(), 16_000);
+        assert!(features.num_frames > 0);
+        assert_eq!(features.num_bins, 40);
     }
 }
