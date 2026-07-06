@@ -10,4 +10,5 @@ pub mod pipeline;
 pub mod preprocess;
 pub mod spectrum;
 pub mod streaming;
+pub mod wav;
 pub mod window;

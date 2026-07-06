@@ -8,4 +8,5 @@ name = "signalflow_rs"
 
 [dependencies]
 anyhow = "1"
+hound = "3"
 rustfft = "6"
