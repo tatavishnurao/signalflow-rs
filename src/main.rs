@@ -1,57 +1,105 @@
 use signalflow_rs::{
-    audio::generate_dummy_audio,
+    audio::{generate_dummy_audio, AudioChunk},
     config::AppConfig,
     extractor::extract_log_mel_timed,
-    preprocess::{preprocess_audio, PreprocessConfig},
+    preprocess::{preprocess_audio, PreprocessConfig, PreprocessedAudio},
     streaming::StreamingExtractor,
+    wav::read_wav_mono_or_interleaved_f32,
 };
-use std::env;
+use std::{env, path::Path};
 
 fn main() -> anyhow::Result<()> {
-    let config = AppConfig::default();
-
     if env::var("SIGNALFLOW_CAPTURE").as_deref() == Ok("1") {
         if let Err(error) = run_capture_demo() {
-            eprintln!("capture demo failed: {error}");
+            eprintln!("microphone demo unavailable: {error}");
         }
         return Ok(());
     }
 
-    let audio_chunk = generate_dummy_audio(&config, 100);
-    let timed = extract_log_mel_timed(&audio_chunk.samples, &config);
+    if let Some(path) = env::args_os().nth(1) {
+        run_wav_demo(Path::new(&path))
+    } else {
+        run_synthetic_demo();
+        Ok(())
+    }
+}
+
+fn run_synthetic_demo() {
+    let config = AppConfig::default();
+    let audio = generate_dummy_audio(&config, 100);
+    let processed = preprocess_chunk(&audio);
 
     println!(
-        "extractor demo: input_samples={}, frames={}, bins={}, elapsed_ms={:.3}, samples_per_second={:.2}, frames_per_second={:.2}",
+        "synthetic input: samples={}, rate_hz={}, channels={}",
+        audio.samples.len(),
+        audio.sample_rate_hz,
+        audio.channels
+    );
+    run_extractors(&processed, &config);
+}
+
+fn run_wav_demo(path: &Path) -> anyhow::Result<()> {
+    let audio = read_wav_mono_or_interleaved_f32(path)?;
+    let processed = preprocess_audio(
+        &audio.samples,
+        audio.sample_rate_hz,
+        audio.channels,
+        PreprocessConfig::default(),
+    );
+
+    println!(
+        "WAV input: samples={}, rate_hz={}, channels={}",
+        audio.samples.len(),
+        audio.sample_rate_hz,
+        audio.channels
+    );
+    println!(
+        "preprocessed: samples={}, rate_hz={}, channels={}",
+        processed.samples.len(),
+        processed.sample_rate_hz,
+        processed.channels
+    );
+    run_extractors(&processed, &AppConfig::default());
+    Ok(())
+}
+
+fn preprocess_chunk(audio: &AudioChunk) -> PreprocessedAudio {
+    preprocess_audio(
+        &audio.samples,
+        audio.sample_rate_hz,
+        audio.channels,
+        PreprocessConfig::default(),
+    )
+}
+
+fn run_extractors(audio: &PreprocessedAudio, config: &AppConfig) {
+    let timed = extract_log_mel_timed(&audio.samples, config);
+    println!(
+        "extractor: input_samples={}, frames={}, bins={}, elapsed_ms={:.3}, samples_per_second={:.2}",
         timed.metrics.input_samples,
         timed.features.num_frames,
         timed.features.num_bins,
         timed.metrics.elapsed_ms,
-        timed.metrics.samples_per_second,
-        timed.metrics.frames_per_second
+        timed.metrics.samples_per_second
     );
 
-    let mut streaming = StreamingExtractor::new(config);
-    let mut total_streaming_frames = 0;
-    for sample_chunk in audio_chunk.samples.chunks(160) {
-        total_streaming_frames += streaming.push_samples(sample_chunk).num_frames;
+    let mut streaming = StreamingExtractor::new(*config);
+    for chunk in audio.samples.chunks(config.hop_size_samples()) {
+        streaming.push_samples(chunk);
     }
-
     println!(
-        "streaming demo: frames={}, pending={}, consumed={}, dropped_samples={}, dropped_frames={}, peak_pending={}",
-        total_streaming_frames,
+        "streaming: frames={}, pending={}, consumed={}, dropped_samples={}, dropped_frames={}, peak_pending={}",
+        streaming.total_emitted_frames(),
         streaming.pending_samples(),
         streaming.total_consumed_samples(),
         streaming.total_dropped_samples(),
         streaming.total_dropped_frames(),
         streaming.peak_pending_samples()
     );
-
-    Ok(())
 }
 
 fn run_capture_demo() -> anyhow::Result<()> {
-    let error =
-        anyhow::anyhow!("microphone capture backend is not available in this repository build");
-    let _ = preprocess_audio(&[], 0, 0, PreprocessConfig::default());
-    Err(error)
+    anyhow::bail!(
+        "this build has no microphone backend; use a WAV path or run the synthetic demo instead"
+    )
 }
