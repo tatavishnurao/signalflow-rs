@@ -10,3 +10,10 @@ name = "signalflow_rs"
 anyhow = "1"
 hound = "3"
 rustfft = "6"
+
+[dev-dependencies]
+criterion = "0.8"
+
+[[bench]]
+name = "extraction"
+harness = false

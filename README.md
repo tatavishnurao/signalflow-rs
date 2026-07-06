@@ -85,6 +85,15 @@ Tests cover DSP stages, preprocessing and resampling, extraction shapes,
 streaming behavior and metrics, WAV decoding, and WAV-to-feature extraction.
 They do not require audio hardware or external files.
 
+## Benchmarking
+
+Criterion benchmarks cover batch and hop-sized streaming extraction for 100 ms,
+1 second, and 60 seconds of 16 kHz mono audio:
+
+```bash
+cargo bench --bench extraction
+```
+
 ## Current limitations
 
 - simple linear resampling only
@@ -98,6 +107,5 @@ They do not require audio hardware or external files.
 - better resampling
 - inference stub
 - ONNX or Candle integration
-- Criterion benchmarks
 - real-time audio callback integration
 - SIMD optimization
