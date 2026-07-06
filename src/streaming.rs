@@ -1,6 +1,6 @@
 use crate::{
     config::AppConfig,
-    features::{log_mel_frame, LogMelConfig},
+    features::{LogMelConfig, LogMelProcessor},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +42,7 @@ pub struct StreamingExtractor {
     streaming_config: StreamingConfig,
     frame_size_samples: usize,
     hop_size_samples: usize,
-    log_mel_config: LogMelConfig,
+    log_mel_processor: LogMelProcessor,
     pending: Vec<f32>,
     read_offset: usize,
     total_input_samples: usize,
@@ -62,13 +62,16 @@ impl StreamingExtractor {
         let app = streaming_config.app;
         let frame_size_samples = app.frame_size_samples();
         let hop_size_samples = app.hop_size_samples();
-        let log_mel_config = LogMelConfig::speech_default(app.sample_rate_hz, frame_size_samples);
+        let log_mel_processor = LogMelProcessor::new(LogMelConfig::speech_default(
+            app.sample_rate_hz,
+            frame_size_samples,
+        ));
 
         Self {
             streaming_config,
             frame_size_samples,
             hop_size_samples,
-            log_mel_config,
+            log_mel_processor,
             pending: Vec::new(),
             read_offset: 0,
             total_input_samples: 0,
@@ -96,7 +99,7 @@ impl StreamingExtractor {
             while self.pending.len().saturating_sub(self.read_offset) >= self.frame_size_samples {
                 let frame =
                     &self.pending[self.read_offset..self.read_offset + self.frame_size_samples];
-                let row = log_mel_frame(frame, self.log_mel_config);
+                let row = self.log_mel_processor.process_frame(frame);
                 features.push(row);
                 self.read_offset += self.hop_size_samples;
                 self.total_consumed_samples += self.hop_size_samples;
