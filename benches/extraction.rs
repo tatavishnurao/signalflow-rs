@@ -1,6 +1,4 @@
-use criterion::{
-    criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
 use signalflow_rs::{
     audio::generate_dummy_audio,
     cached::{CachedExtractorConfig, CachedLogMelExtractor},
