@@ -1,49 +1,40 @@
 # SignalFlow-rs
 
-A Rust real-time audio DSP frontend for log-Mel feature extraction.
-
-## What it does
-
-SignalFlow-rs converts raw or WAV audio into finite, model-ready log-Mel feature
-matrices. It supports whole-buffer, batch, timed, and stateful streaming
-extraction, plus a cached/prepared extractor for repeated log-Mel work.
+Real-time-capable Rust DSP/log-Mel frontend for audio feature extraction.
 
 ## Current pipeline
 
 ```text
-raw samples / WAV input
+WAV / raw samples
   -> preprocessing to 16 kHz mono
-  -> streaming buffer
-  -> overlapping frames
-  -> Hann windowing
+  -> framing
+  -> Hann window
   -> FFT power spectrum
   -> Mel filterbank
-  -> log-Mel features
-  -> metrics/demo
+  -> log compression
+  -> feature matrix
+  -> streaming buffer / drop metrics
 ```
 
-## Current capabilities
+## Capabilities
 
 - dummy audio generation
 - preprocessing to 16 kHz mono
-- framing and Hann windowing
+- WAV input
+- framing
+- Hann windowing
 - FFT power spectrum
 - Mel filterbank and log-Mel features
-- cached/prepared log-Mel extraction
-- cached streaming extraction
-- precomputed Hann window reuse
-- cached FFT planning reuse
-- cached Mel filterbank reuse
-- single-buffer and batch extraction
-- timed extraction metrics
+- reusable batch extractor API
 - streaming extraction
-- cursor-based streaming buffer compaction
 - bounded streaming with backpressure and drop metrics
-- integer PCM and 32-bit float WAV input
+- timed extraction metrics
+- cached/prepared batch extraction
+- cached streaming wrapper API
+- std-only benchmark helpers
+- Criterion benchmarks
 
-## Quick start
-
-Requires a stable Rust toolchain.
+## Quick Start
 
 ```bash
 cargo run
@@ -51,52 +42,40 @@ cargo test
 cargo run --release
 ```
 
-## Synthetic demo
+## Synthetic Demo
 
-The default demo generates 100 ms of audio, preprocesses it, and runs both
-timed, cached, and streaming extraction:
+The default demo generates 100 ms of synthetic audio, preprocesses it, and
+prints timed, cached batch, cached streaming wrapper, and streaming results.
 
 ```bash
 cargo run
 ```
 
-## WAV demo
+## WAV Demo
 
-Pass a WAV path to preserve its source metadata, preprocess it to 16 kHz mono,
-and extract features:
+Pass a WAV path to read audio, preprocess it to 16 kHz mono, and extract
+features.
 
 ```bash
 cargo run -- path/to/audio.wav
 ```
 
-## Optional microphone demo
+Microphone capture is not included in v0.1. The environment variable entry
+point remains a stub and exits with an explanatory message.
 
-The environment-variable entry point is reserved, but this v0.1 build does not
-include a microphone backend:
+## Streaming Stress Example
 
-```bash
-SIGNALFLOW_CAPTURE=1 cargo run
-```
-
-It exits cleanly with an explanatory message. Use WAV input for captured audio.
-
-## Testing
+Run the synthetic streaming stress report from the example target.
 
 ```bash
-cargo fmt --check
-cargo test
+cargo run --example streaming_stress --release
 ```
-
-Tests cover DSP stages, preprocessing and resampling, extraction shapes,
-streaming behavior and metrics, WAV decoding, and WAV-to-feature extraction.
-They do not require audio hardware or external files.
 
 ## Benchmarking
 
 Criterion compares API paths for free-function batch extraction, reusable
 processor batch extraction, processor-backed streaming extraction, and cached
-wrapper streaming extraction for 100 ms, 1 second, and 60 seconds of 16 kHz
-mono audio:
+wrapper streaming extraction.
 
 ```bash
 cargo bench --bench extraction
@@ -105,18 +84,39 @@ cargo run --release
 
 `StreamingExtractor` already uses the shared cached `LogMelProcessor` kernel.
 `CachedLogMelExtractor` is a reusable whole-buffer API built on that processor.
-`CachedStreamingExtractor` is a named wrapper API, not a promise of better
-speed than `StreamingExtractor`. The exact numbers depend on machine and build
-mode, and this is still not production real-time scheduling.
+`CachedStreamingExtractor` is a named wrapper API, not a guarantee of better
+speed than `StreamingExtractor`.
 
-## Current limitations
+Performance numbers are machine-dependent and should be read in release mode.
+This is real-time-capable feature extraction, not real-time scheduling.
 
-- simple linear resampling only
+## Examples
+
+- `cargo run --example synthetic --release`
+- `cargo run --example wav_file -- path/to/audio.wav`
+- `cargo run --example streaming_stress --release`
+
+## Architecture Docs
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
+- [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)
+
+## Performance Notes
+
+- Debug builds are for correctness, not performance claims.
+- Release mode is required for meaningful timing.
+- Criterion results vary by machine and compiler settings.
+- Streaming and batch extraction share the same cached DSP kernel through
+  `LogMelProcessor`.
+
+## Current Limitations
+
+- no microphone backend in v0.1
 - no model inference yet
-- no SIMD or GPU acceleration yet
-- real-time-capable DSP frontend, but not yet a production real-time audio accelerator
-- no real-time scheduling guarantees yet
-- microphone capture remains experimental and is not included in this build
+- no real-time scheduling guarantees
+- simple linear resampling only
+- no SIMD or GPU acceleration
 
 ## Roadmap
 
@@ -125,3 +125,9 @@ mode, and this is still not production real-time scheduling.
 - ONNX or Candle integration
 - real-time audio callback integration
 - SIMD optimization
+
+## v0.1 Status
+
+SignalFlow-rs is usable as a small, reproducible DSP frontend for log-Mel
+feature extraction with demos, benchmarks, examples, and documentation in place.
+It is not a production real-time audio accelerator.
