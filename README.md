@@ -93,18 +93,21 @@ They do not require audio hardware or external files.
 
 ## Benchmarking
 
-Criterion compares uncached batch extraction, cached batch extraction,
-uncached streaming extraction, and cached streaming extraction for 100 ms,
-1 second, and 60 seconds of 16 kHz mono audio:
+Criterion compares API paths for free-function batch extraction, reusable
+processor batch extraction, processor-backed streaming extraction, and cached
+wrapper streaming extraction for 100 ms, 1 second, and 60 seconds of 16 kHz
+mono audio:
 
 ```bash
 cargo bench --bench extraction
 cargo run --release
 ```
 
-Cached paths reduce repeated planning and allocation overhead. The exact
-numbers depend on machine and build mode, and this is still not production
-real-time scheduling.
+`StreamingExtractor` already uses the shared cached `LogMelProcessor` kernel.
+`CachedLogMelExtractor` is a reusable whole-buffer API built on that processor.
+`CachedStreamingExtractor` is a named wrapper API, not a promise of better
+speed than `StreamingExtractor`. The exact numbers depend on machine and build
+mode, and this is still not production real-time scheduling.
 
 ## Current limitations
 
