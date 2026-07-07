@@ -569,6 +569,31 @@ mod tests {
     }
 
     #[test]
+    fn streaming_and_cached_streaming_match_shape_for_default_audio() {
+        let samples: Vec<f32> = (0..1_600).map(|i| i as f32).collect();
+        let mut streaming = StreamingExtractor::new(AppConfig::default());
+        let mut cached = CachedStreamingExtractor::new(AppConfig::default());
+        let mut streaming_frames = 0;
+        let mut cached_frames = 0;
+        let mut streaming_rows = Vec::new();
+        let mut cached_rows = Vec::new();
+
+        for chunk in samples.chunks(160) {
+            let streaming_output = streaming.push_samples(chunk);
+            let cached_output = cached.push_samples(chunk);
+            streaming_frames += streaming_output.num_frames;
+            cached_frames += cached_output.num_frames;
+            streaming_rows.extend(streaming_output.features);
+            cached_rows.extend(cached_output.features);
+        }
+
+        assert_eq!(streaming_frames, cached_frames);
+        assert_eq!(streaming_rows.len(), cached_rows.len());
+        assert!(streaming_rows.iter().all(|row| row.len() == 40));
+        assert!(cached_rows.iter().all(|row| row.len() == 40));
+    }
+
+    #[test]
     fn peak_pending_samples_is_tracked() {
         let mut extractor = StreamingExtractor::new(AppConfig::default());
         extractor.push_samples(&vec![1.0; 100]);
