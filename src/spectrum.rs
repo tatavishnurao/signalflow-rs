@@ -54,7 +54,7 @@ mod tests {
 
     #[test]
     fn magnitude_spectrum_detects_dc_signal() {
-        let spectrum = magnitude_spectrum(&vec![1.0; 16]);
+        let spectrum = magnitude_spectrum(&[1.0; 16]);
 
         assert!(spectrum[0] > 0.0);
         assert!(spectrum[0] > spectrum[1]);

@@ -74,16 +74,26 @@ pub fn build_mel_filterbank(config: MelConfig) -> Vec<Vec<f32>> {
         }
 
         if center > left {
-            for bin in left..=center.min(fft_bins - 1) {
-                row[bin] = (bin - left) as f32 / (center - left) as f32;
+            for (bin, slot) in row
+                .iter_mut()
+                .enumerate()
+                .take(center.min(fft_bins - 1) + 1)
+                .skip(left)
+            {
+                *slot = (bin - left) as f32 / (center - left) as f32;
             }
         } else if center < fft_bins {
             row[center] = 1.0;
         }
 
         if right > center {
-            for bin in center..=right.min(fft_bins - 1) {
-                row[bin] = row[bin].max((right - bin) as f32 / (right - center) as f32);
+            for (bin, slot) in row
+                .iter_mut()
+                .enumerate()
+                .take(right.min(fft_bins - 1) + 1)
+                .skip(center)
+            {
+                *slot = (*slot).max((right - bin) as f32 / (right - center) as f32);
             }
         } else if center < fft_bins {
             row[center] = row[center].max(1.0);
