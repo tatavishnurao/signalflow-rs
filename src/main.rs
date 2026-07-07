@@ -1,12 +1,13 @@
 use signalflow_rs::{
     audio::{generate_dummy_audio, AudioChunk},
+    bench::benchmark_cached_extractor,
     config::AppConfig,
     extractor::extract_log_mel_timed,
     preprocess::{preprocess_audio, PreprocessConfig, PreprocessedAudio},
     streaming::StreamingExtractor,
     wav::read_wav_mono_or_interleaved_f32,
 };
-use std::{env, path::Path};
+use std::{env, path::Path, time::Instant};
 
 fn main() -> anyhow::Result<()> {
     if env::var("SIGNALFLOW_CAPTURE").as_deref() == Ok("1") {
@@ -82,14 +83,34 @@ fn run_extractors(audio: &PreprocessedAudio, config: &AppConfig) {
         timed.metrics.elapsed_ms,
         timed.metrics.samples_per_second
     );
+    let audio_ms = (audio.samples.len() as f64 / config.sample_rate_hz as f64) * 1_000.0;
+    let bench_iterations = if audio.samples.len() <= config.sample_rate_hz as usize {
+        1_000
+    } else {
+        100
+    };
+    let cached = benchmark_cached_extractor(&audio.samples, config, bench_iterations, audio_ms);
+    println!(
+        "cached: avg_ms={:.3}, rt_factor={:.2}, frames={}, bins={}",
+        cached.avg_ms_per_iter, cached.realtime_factor, cached.frames_per_iter, cached.bins
+    );
 
+    let streaming_start = Instant::now();
     let mut streaming = StreamingExtractor::new(*config);
     for chunk in audio.samples.chunks(config.hop_size_samples()) {
         streaming.push_samples(chunk);
     }
+    let streaming_elapsed_ms = streaming_start.elapsed().as_secs_f64() * 1_000.0;
+    let streaming_realtime_factor = if streaming_elapsed_ms > 0.0 {
+        audio_ms / streaming_elapsed_ms
+    } else {
+        0.0
+    };
     println!(
-        "streaming: frames={}, pending={}, consumed={}, dropped_samples={}, dropped_frames={}, peak_pending={}",
+        "streaming: frames={}, elapsed_ms={:.3}, rt_factor={:.2}, pending={}, consumed={}, dropped_samples={}, dropped_frames={}, peak_pending={}",
         streaming.total_emitted_frames(),
+        streaming_elapsed_ms,
+        streaming_realtime_factor,
         streaming.pending_samples(),
         streaming.total_consumed_samples(),
         streaming.total_dropped_samples(),
