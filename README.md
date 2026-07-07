@@ -6,7 +6,7 @@ A Rust real-time audio DSP frontend for log-Mel feature extraction.
 
 SignalFlow-rs converts raw or WAV audio into finite, model-ready log-Mel feature
 matrices. It supports whole-buffer, batch, timed, and stateful streaming
-extraction.
+extraction, plus a cached/prepared extractor for repeated log-Mel work.
 
 ## Current pipeline
 
@@ -29,6 +29,10 @@ raw samples / WAV input
 - framing and Hann windowing
 - FFT power spectrum
 - Mel filterbank and log-Mel features
+- cached/prepared log-Mel extraction
+- precomputed Hann window reuse
+- cached FFT planning reuse
+- cached Mel filterbank reuse
 - single-buffer and batch extraction
 - timed extraction metrics
 - streaming extraction
@@ -43,12 +47,13 @@ Requires a stable Rust toolchain.
 ```bash
 cargo run
 cargo test
+cargo run --release
 ```
 
 ## Synthetic demo
 
 The default demo generates 100 ms of audio, preprocesses it, and runs both
-timed and streaming extraction:
+timed, cached, and streaming extraction:
 
 ```bash
 cargo run
@@ -94,13 +99,20 @@ Criterion benchmarks cover batch and hop-sized streaming extraction for 100 ms,
 cargo bench --bench extraction
 ```
 
+The demo also includes std-only cached extraction and streaming timing paths:
+
+```bash
+cargo run --release
+```
+
 ## Current limitations
 
 - simple linear resampling only
 - no model inference yet
 - no SIMD or GPU acceleration yet
+- real-time-capable DSP frontend, but not yet a production real-time audio accelerator
+- no real-time scheduling guarantees yet
 - microphone capture remains experimental and is not included in this build
-- no production real-time scheduling yet
 
 ## Roadmap
 
