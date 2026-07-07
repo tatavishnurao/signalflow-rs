@@ -93,18 +93,18 @@ They do not require audio hardware or external files.
 
 ## Benchmarking
 
-Criterion benchmarks cover batch and hop-sized streaming extraction for 100 ms,
+Criterion compares uncached batch extraction, cached batch extraction,
+uncached streaming extraction, and cached streaming extraction for 100 ms,
 1 second, and 60 seconds of 16 kHz mono audio:
 
 ```bash
 cargo bench --bench extraction
-```
-
-The demo also includes std-only cached extraction and streaming timing paths:
-
-```bash
 cargo run --release
 ```
+
+Cached paths reduce repeated planning and allocation overhead. The exact
+numbers depend on machine and build mode, and this is still not production
+real-time scheduling.
 
 ## Current limitations
 
