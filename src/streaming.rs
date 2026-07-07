@@ -1,4 +1,5 @@
 use crate::{
+    cached::{CachedExtractorConfig, CachedLogMelExtractor},
     config::AppConfig,
     features::{LogMelConfig, LogMelProcessor},
 };
@@ -43,6 +44,21 @@ pub struct StreamingExtractor {
     frame_size_samples: usize,
     hop_size_samples: usize,
     log_mel_processor: LogMelProcessor,
+    pending: Vec<f32>,
+    read_offset: usize,
+    total_input_samples: usize,
+    total_emitted_frames: usize,
+    total_consumed_samples: usize,
+    total_dropped_samples: usize,
+    total_dropped_frames: usize,
+    peak_pending_samples: usize,
+}
+
+pub struct CachedStreamingExtractor {
+    streaming_config: StreamingConfig,
+    frame_size_samples: usize,
+    hop_size_samples: usize,
+    cached_extractor: CachedLogMelExtractor,
     pending: Vec<f32>,
     read_offset: usize,
     total_input_samples: usize,
@@ -206,9 +222,160 @@ impl StreamingExtractor {
     }
 }
 
+impl CachedStreamingExtractor {
+    pub fn new(config: AppConfig) -> Self {
+        Self::with_streaming_config(StreamingConfig::new(config))
+    }
+
+    pub fn with_streaming_config(streaming_config: StreamingConfig) -> Self {
+        let app = streaming_config.app;
+        let frame_size_samples = app.frame_size_samples();
+        let hop_size_samples = app.hop_size_samples();
+        let cached_extractor =
+            CachedLogMelExtractor::new(CachedExtractorConfig::speech_default(app));
+
+        Self {
+            streaming_config,
+            frame_size_samples,
+            hop_size_samples,
+            cached_extractor,
+            pending: Vec::new(),
+            read_offset: 0,
+            total_input_samples: 0,
+            total_emitted_frames: 0,
+            total_consumed_samples: 0,
+            total_dropped_samples: 0,
+            total_dropped_frames: 0,
+            peak_pending_samples: 0,
+        }
+    }
+
+    pub fn push_samples(&mut self, samples: &[f32]) -> StreamingOutput {
+        self.pending.extend_from_slice(samples);
+        self.total_input_samples += samples.len();
+
+        let logical_pending_after_append = self.pending.len().saturating_sub(self.read_offset);
+        if logical_pending_after_append > self.peak_pending_samples {
+            self.peak_pending_samples = logical_pending_after_append;
+        }
+
+        let mut features = Vec::new();
+        let mut consumed_samples = 0;
+
+        if self.frame_size_samples != 0 && self.hop_size_samples != 0 {
+            while self.pending.len().saturating_sub(self.read_offset) >= self.frame_size_samples {
+                let frame =
+                    &self.pending[self.read_offset..self.read_offset + self.frame_size_samples];
+                let row = self.cached_extractor.extract_frame(frame);
+                features.push(row);
+                self.read_offset += self.hop_size_samples;
+                self.total_consumed_samples += self.hop_size_samples;
+                consumed_samples += self.hop_size_samples;
+                self.total_emitted_frames += 1;
+            }
+        }
+
+        self.compact_if_needed();
+        let (dropped_samples, dropped_frames) = self.enforce_pending_limit();
+        self.total_dropped_samples += dropped_samples;
+        self.total_dropped_frames += dropped_frames;
+
+        let num_frames = features.len();
+        let num_bins = features.first().map(|row| row.len()).unwrap_or(0);
+
+        StreamingOutput {
+            features,
+            num_frames,
+            num_bins,
+            consumed_samples,
+            pending_samples: self.pending_samples(),
+            dropped_samples,
+            dropped_frames,
+            peak_pending_samples: self.peak_pending_samples,
+        }
+    }
+
+    pub fn pending_samples(&self) -> usize {
+        self.pending.len().saturating_sub(self.read_offset)
+    }
+
+    pub fn total_input_samples(&self) -> usize {
+        self.total_input_samples
+    }
+
+    pub fn total_emitted_frames(&self) -> usize {
+        self.total_emitted_frames
+    }
+
+    pub fn total_consumed_samples(&self) -> usize {
+        self.total_consumed_samples
+    }
+
+    pub fn total_dropped_samples(&self) -> usize {
+        self.total_dropped_samples
+    }
+
+    pub fn total_dropped_frames(&self) -> usize {
+        self.total_dropped_frames
+    }
+
+    pub fn peak_pending_samples(&self) -> usize {
+        self.peak_pending_samples
+    }
+
+    pub fn max_pending_samples(&self) -> usize {
+        self.peak_pending_samples
+    }
+
+    fn compact_if_needed(&mut self) {
+        if self.read_offset == 0 {
+            return;
+        }
+
+        if self.read_offset >= self.hop_size_samples.saturating_mul(4)
+            || self.read_offset >= self.pending.len() / 2
+        {
+            self.pending.drain(0..self.read_offset);
+            self.read_offset = 0;
+        }
+    }
+
+    fn enforce_pending_limit(&mut self) -> (usize, usize) {
+        let Some(limit) = self.streaming_config.max_pending_samples else {
+            return (0, 0);
+        };
+
+        if self.read_offset > 0 {
+            self.pending.drain(0..self.read_offset);
+            self.read_offset = 0;
+        }
+
+        let logical_pending = self.pending.len();
+        if logical_pending <= limit || self.hop_size_samples == 0 {
+            return (0, 0);
+        }
+
+        let mut dropped_samples = logical_pending - limit;
+        let hop = self.hop_size_samples;
+        let remainder = dropped_samples % hop;
+        if remainder != 0 {
+            dropped_samples += hop - remainder;
+        }
+        dropped_samples = dropped_samples.min(logical_pending);
+
+        if dropped_samples == 0 {
+            return (0, 0);
+        }
+
+        self.pending.drain(0..dropped_samples);
+        let dropped_frames = dropped_samples / hop;
+        (dropped_samples, dropped_frames)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{StreamingConfig, StreamingExtractor, StreamingOutput};
+    use super::{CachedStreamingExtractor, StreamingConfig, StreamingExtractor, StreamingOutput};
     use crate::{
         audio::generate_dummy_audio, config::AppConfig, extractor::extract_log_mel_from_samples,
     };
@@ -340,6 +507,64 @@ mod tests {
         let mut extractor = StreamingExtractor::new(AppConfig::default());
         extractor.push_samples(&vec![1.0; 1_600]);
 
+        assert_eq!(extractor.total_consumed_samples(), 1_280);
+    }
+
+    #[test]
+    fn cached_streaming_empty_push_returns_no_frames() {
+        let mut extractor = CachedStreamingExtractor::new(AppConfig::default());
+        let output = extractor.push_samples(&[]);
+
+        assert_eq!(output.num_frames, 0);
+        assert_eq!(output.num_bins, 0);
+        assert_eq!(output.consumed_samples, 0);
+        assert_eq!(output.pending_samples, 0);
+        assert_eq!(output.dropped_samples, 0);
+        assert_eq!(output.dropped_frames, 0);
+        assert_eq!(extractor.pending_samples(), 0);
+    }
+
+    #[test]
+    fn cached_streaming_emits_expected_frames_for_1600_samples_single_push() {
+        let mut extractor = CachedStreamingExtractor::new(AppConfig::default());
+        let output = extractor.push_samples(&vec![1.0; 1_600]);
+
+        assert_eq!(output.num_frames, 8);
+        assert_eq!(output.num_bins, 40);
+        assert_eq!(output.pending_samples, 320);
+        assert_eq!(extractor.total_emitted_frames(), 8);
+        assert_eq!(extractor.total_consumed_samples(), 1_280);
+        assert_eq!(extractor.peak_pending_samples(), 1_600);
+    }
+
+    #[test]
+    fn cached_streaming_values_are_finite() {
+        let mut extractor = CachedStreamingExtractor::new(AppConfig::default());
+        let output = extractor.push_samples(&vec![1.0; 1_600]);
+
+        assert!(output
+            .features
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite()));
+    }
+
+    #[test]
+    fn cached_streaming_preserves_overlap_across_pushes() {
+        let samples: Vec<f32> = (0..1_600).map(|i| i as f32).collect();
+        let reference = extract_log_mel_from_samples(&samples, &AppConfig::default());
+        let mut extractor = CachedStreamingExtractor::new(AppConfig::default());
+        let mut outputs = Vec::new();
+
+        for chunk in samples.chunks(160) {
+            outputs.push(extractor.push_samples(chunk));
+        }
+
+        let streamed = flatten_features(&outputs);
+
+        assert_eq!(streamed.len(), reference.values.len());
+        assert_eq!(extractor.total_emitted_frames(), reference.num_frames);
+        assert_eq!(extractor.pending_samples(), 320);
         assert_eq!(extractor.total_consumed_samples(), 1_280);
     }
 

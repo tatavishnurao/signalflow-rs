@@ -30,6 +30,7 @@ raw samples / WAV input
 - FFT power spectrum
 - Mel filterbank and log-Mel features
 - cached/prepared log-Mel extraction
+- cached streaming extraction
 - precomputed Hann window reuse
 - cached FFT planning reuse
 - cached Mel filterbank reuse
