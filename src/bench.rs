@@ -1,6 +1,7 @@
 use crate::{
     cached::{CachedExtractorConfig, CachedLogMelExtractor},
     config::AppConfig,
+    streaming::CachedStreamingExtractor,
 };
 use std::time::Instant;
 
@@ -55,9 +56,54 @@ pub fn benchmark_cached_extractor(
     }
 }
 
+pub fn benchmark_cached_streaming_extractor(
+    samples: &[f32],
+    config: &AppConfig,
+    iterations: usize,
+    audio_ms_per_iter: f64,
+) -> BenchReport {
+    let hop_size = config.hop_size_samples();
+    let start = Instant::now();
+    let mut frames_per_iter = 0;
+    let mut bins = 0;
+
+    for _ in 0..iterations {
+        let mut extractor = CachedStreamingExtractor::new(*config);
+        let mut last_output_bins = 0;
+        for chunk in samples.chunks(hop_size) {
+            let output = extractor.push_samples(chunk);
+            last_output_bins = output.num_bins;
+        }
+        frames_per_iter = extractor.total_emitted_frames();
+        bins = last_output_bins;
+    }
+
+    let elapsed_ms = start.elapsed().as_secs_f64() * 1_000.0;
+    let avg_ms_per_iter = if iterations == 0 {
+        0.0
+    } else {
+        elapsed_ms / iterations as f64
+    };
+    let realtime_factor = if avg_ms_per_iter > 0.0 {
+        audio_ms_per_iter / avg_ms_per_iter
+    } else {
+        0.0
+    };
+
+    BenchReport {
+        iterations,
+        audio_ms_per_iter,
+        elapsed_ms,
+        avg_ms_per_iter,
+        realtime_factor,
+        frames_per_iter,
+        bins,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{benchmark_cached_extractor, BenchReport};
+    use super::{benchmark_cached_extractor, benchmark_cached_streaming_extractor, BenchReport};
     use crate::config::AppConfig;
 
     #[test]
@@ -103,5 +149,26 @@ mod tests {
         assert_eq!(report.iterations, 0);
         assert_eq!(report.avg_ms_per_iter, 0.0);
         assert_eq!(report.realtime_factor, 0.0);
+    }
+
+    #[test]
+    fn benchmark_cached_streaming_extractor_runs() {
+        let samples: Vec<f32> = (0..1_600).map(|i| i as f32).collect();
+        let report =
+            benchmark_cached_streaming_extractor(&samples, &AppConfig::default(), 4, 100.0);
+
+        assert_eq!(report.frames_per_iter, 8);
+        assert_eq!(report.bins, 40);
+    }
+
+    #[test]
+    fn benchmark_cached_streaming_extractor_reports_expected_shape() {
+        let samples: Vec<f32> = (0..1_600).map(|i| i as f32).collect();
+        let report =
+            benchmark_cached_streaming_extractor(&samples, &AppConfig::default(), 4, 100.0);
+
+        assert_eq!(report.iterations, 4);
+        assert!(report.elapsed_ms >= 0.0);
+        assert_eq!(report.audio_ms_per_iter, 100.0);
     }
 }
