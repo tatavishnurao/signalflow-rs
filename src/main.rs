@@ -1,6 +1,6 @@
 use signalflow_rs::{
     audio::{generate_dummy_audio, AudioChunk},
-    bench::benchmark_cached_extractor,
+    bench::{benchmark_cached_extractor, benchmark_cached_streaming_extractor},
     config::AppConfig,
     extractor::extract_log_mel_timed,
     preprocess::{preprocess_audio, PreprocessConfig, PreprocessedAudio},
@@ -91,8 +91,18 @@ fn run_extractors(audio: &PreprocessedAudio, config: &AppConfig) {
     };
     let cached = benchmark_cached_extractor(&audio.samples, config, bench_iterations, audio_ms);
     println!(
-        "cached: avg_ms={:.3}, rt_factor={:.2}, frames={}, bins={}",
+        "cached batch: avg_ms={:.3}, rt_factor={:.2}, frames={}, bins={}",
         cached.avg_ms_per_iter, cached.realtime_factor, cached.frames_per_iter, cached.bins
+    );
+
+    let cached_streaming =
+        benchmark_cached_streaming_extractor(&audio.samples, config, bench_iterations, audio_ms);
+    println!(
+        "cached streaming: avg_ms={:.3}, rt_factor={:.2}, frames={}, bins={}",
+        cached_streaming.avg_ms_per_iter,
+        cached_streaming.realtime_factor,
+        cached_streaming.frames_per_iter,
+        cached_streaming.bins
     );
 
     let streaming_start = Instant::now();
