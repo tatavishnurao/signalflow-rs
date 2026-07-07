@@ -98,7 +98,7 @@ fn run_extractors(audio: &PreprocessedAudio, config: &AppConfig) {
     let cached_streaming =
         benchmark_cached_streaming_extractor(&audio.samples, config, bench_iterations, audio_ms);
     println!(
-        "cached streaming: avg_ms={:.3}, rt_factor={:.2}, frames={}, bins={}",
+        "cached streaming wrapper: avg_ms={:.3}, rt_factor={:.2}, frames={}, bins={}",
         cached_streaming.avg_ms_per_iter,
         cached_streaming.realtime_factor,
         cached_streaming.frames_per_iter,

@@ -20,7 +20,7 @@ fn expected_frames(sample_count: usize, frame_size: usize, hop_size: usize) -> u
 
 fn benchmark_batch_extraction(criterion: &mut Criterion) {
     let config = AppConfig::default();
-    let mut uncached_group = criterion.benchmark_group("batch_log_mel_uncached");
+    let mut free_function_group = criterion.benchmark_group("batch_log_mel_free_function");
 
     for duration_ms in DURATIONS_MS {
         let audio = generate_dummy_audio(&config, duration_ms);
@@ -33,8 +33,8 @@ fn benchmark_batch_extraction(criterion: &mut Criterion) {
         assert_eq!(features.num_frames, expected);
         assert_eq!(features.num_bins, 40);
 
-        uncached_group.throughput(Throughput::Elements(audio.samples.len() as u64));
-        uncached_group.bench_with_input(
+        free_function_group.throughput(Throughput::Elements(audio.samples.len() as u64));
+        free_function_group.bench_with_input(
             BenchmarkId::from_parameter(format!("{duration_ms}ms")),
             &audio.samples,
             |bencher, samples| {
@@ -43,9 +43,10 @@ fn benchmark_batch_extraction(criterion: &mut Criterion) {
         );
     }
 
-    uncached_group.finish();
+    free_function_group.finish();
 
-    let mut cached_group = criterion.benchmark_group("batch_log_mel_cached");
+    let mut reusable_processor_group =
+        criterion.benchmark_group("batch_log_mel_reusable_processor");
     for duration_ms in DURATIONS_MS {
         let audio = generate_dummy_audio(&config, duration_ms);
         let expected = expected_frames(
@@ -57,8 +58,8 @@ fn benchmark_batch_extraction(criterion: &mut Criterion) {
         assert_eq!(features.num_frames, expected);
         assert_eq!(features.num_bins, 40);
 
-        cached_group.throughput(Throughput::Elements(audio.samples.len() as u64));
-        cached_group.bench_with_input(
+        reusable_processor_group.throughput(Throughput::Elements(audio.samples.len() as u64));
+        reusable_processor_group.bench_with_input(
             BenchmarkId::from_parameter(format!("{duration_ms}ms")),
             &audio.samples,
             |bencher, samples| {
@@ -74,14 +75,14 @@ fn benchmark_batch_extraction(criterion: &mut Criterion) {
         );
     }
 
-    cached_group.finish();
+    reusable_processor_group.finish();
 }
 
 fn benchmark_streaming_extraction(criterion: &mut Criterion) {
     let config = AppConfig::default();
     let hop_size = config.hop_size_samples();
     let frame_size = config.frame_size_samples();
-    let mut uncached_group = criterion.benchmark_group("streaming_log_mel_uncached");
+    let mut processor_group = criterion.benchmark_group("streaming_log_mel_processor");
 
     for duration_ms in DURATIONS_MS {
         let audio = generate_dummy_audio(&config, duration_ms);
@@ -94,8 +95,8 @@ fn benchmark_streaming_extraction(criterion: &mut Criterion) {
         assert_eq!(emitted_frames, expected);
         assert_eq!(extractor.total_emitted_frames(), expected);
 
-        uncached_group.throughput(Throughput::Elements(audio.samples.len() as u64));
-        uncached_group.bench_with_input(
+        processor_group.throughput(Throughput::Elements(audio.samples.len() as u64));
+        processor_group.bench_with_input(
             BenchmarkId::from_parameter(format!("{duration_ms}ms")),
             &audio.samples,
             |bencher, samples| {
@@ -113,9 +114,9 @@ fn benchmark_streaming_extraction(criterion: &mut Criterion) {
         );
     }
 
-    uncached_group.finish();
+    processor_group.finish();
 
-    let mut cached_group = criterion.benchmark_group("streaming_log_mel_cached");
+    let mut cached_wrapper_group = criterion.benchmark_group("streaming_log_mel_cached_wrapper");
     for duration_ms in DURATIONS_MS {
         let audio = generate_dummy_audio(&config, duration_ms);
         let expected = expected_frames(audio.samples.len(), frame_size, hop_size);
@@ -127,8 +128,8 @@ fn benchmark_streaming_extraction(criterion: &mut Criterion) {
         assert_eq!(emitted_frames, expected);
         assert_eq!(extractor.total_emitted_frames(), expected);
 
-        cached_group.throughput(Throughput::Elements(audio.samples.len() as u64));
-        cached_group.bench_with_input(
+        cached_wrapper_group.throughput(Throughput::Elements(audio.samples.len() as u64));
+        cached_wrapper_group.bench_with_input(
             BenchmarkId::from_parameter(format!("{duration_ms}ms")),
             &audio.samples,
             |bencher, samples| {
@@ -146,7 +147,7 @@ fn benchmark_streaming_extraction(criterion: &mut Criterion) {
         );
     }
 
-    cached_group.finish();
+    cached_wrapper_group.finish();
 }
 
 criterion_group!(
