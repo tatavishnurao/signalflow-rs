@@ -16,6 +16,9 @@ WAV / raw samples
   -> streaming buffer / drop metrics
 ```
 
+<img width="1899" height="360" alt="image" src="https://github.com/user-attachments/assets/78b65c02-f2eb-44bb-94bc-fdf486391caa" />
+
+
 ## Capabilities
 
 - dummy audio generation
@@ -109,14 +112,6 @@ This is real-time-capable feature extraction, not real-time scheduling.
 - Criterion results vary by machine and compiler settings.
 - Streaming and batch extraction share the same cached DSP kernel through
   `LogMelProcessor`.
-
-## Current Limitations
-
-- no microphone backend in v0.1
-- no model inference yet
-- no real-time scheduling guarantees
-- simple linear resampling only
-- no SIMD or GPU acceleration
 
 ## Roadmap
 
